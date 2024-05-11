@@ -1,4 +1,4 @@
-package eazy_http
+package easy_http
 
 import (
 	"context"
