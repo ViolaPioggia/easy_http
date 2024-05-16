@@ -1,4 +1,4 @@
-package eazy_http
+package easy_http
 
 import (
 	"github.com/cloudwego/hertz/pkg/app/client"
