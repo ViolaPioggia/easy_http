@@ -27,27 +27,6 @@ type Request struct {
 	Error          interface{}
 }
 
-/*
-Do()
-DoDeadline()
-DoRedirects()
-DoTimeout()
-Get()
-GetDeadline()
-GetTimeout()
-Post()
-[] Send() (*Response, error)
-[] Execute(method, url string) (*Response, error)
-[] Get(url string)(*Response, error)
-[] Head(url string)(*Response, error)
-[] Post(url string) (*Response, error)
-[] Put(url string) (*Response, error)
-[] Delete(url string) (*Response, error)
-[] Options(url string) (*Response, error)
-[] Patch(url string) (*Response, error)ost()
-*/
-
-
 const (
 	// MethodGet HTTP method
 	MethodGet = "GET"

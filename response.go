@@ -28,7 +28,7 @@ func (r *Response) Status() string {
 	if r.rawResponse == nil {
 		return ""
 	}
-	return ""   // temporary to set ""
+	return ""   // warning : temporary to set ""
 }
 func (r *Response) Result() interface{} {
 	return r.request.Result
