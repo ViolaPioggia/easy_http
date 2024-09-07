@@ -29,7 +29,7 @@ type Response struct {
 	RawResponse *protocol.Response
 
 	bodyByte []byte
-	size     int64
+	size     int
 }
 
 func (r *Response) Body() []byte {

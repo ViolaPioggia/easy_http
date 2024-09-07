@@ -52,6 +52,16 @@ type Request struct {
 	hasCreate           bool
 }
 
+// SetQueryParam method sets single parameter and its value in the current request.
+// It will be formed as query string for the request.
+//
+// For Example: `search=kitchen%20papers&size=large` in the URL after `?` mark.
+//
+//	client.R().
+//		SetQueryParam("search", "kitchen papers").
+//		SetQueryParam("size", "large")
+//
+// Note: it will overwrite the same query key.
 func (r *Request) SetQueryParam(param, value string) *Request {
 	r.QueryParam.Set(param, value)
 	return r

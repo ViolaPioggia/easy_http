@@ -218,6 +218,8 @@ func parseResponseBody(c *Client, resp *Response) (err error) {
 	if resp.StatusCode() == http.StatusNoContent {
 		return
 	}
+	resp.bodyByte = resp.Body()
+	resp.size = resp.RawResponse.Header.ContentLength()
 	// Handles only JSON or XML content type
 	ct := resp.Header().Get(hdrContentTypeKey)
 	isError := resp.IsError()
