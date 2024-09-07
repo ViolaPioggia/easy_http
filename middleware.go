@@ -19,14 +19,16 @@ package easy_http
 import (
 	"encoding/json"
 	"encoding/xml"
-	"github.com/cloudwego/hertz/pkg/protocol"
-	"github.com/cloudwego/hertz/pkg/protocol/consts"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"reflect"
 	"regexp"
 	"strings"
+
+	"github.com/cloudwego/hertz/pkg/protocol"
+	"github.com/cloudwego/hertz/pkg/protocol/consts"
 )
 
 var (
@@ -140,11 +142,15 @@ func detectContentType(body interface{}) string {
 	return contentType
 }
 
-func bindRequestBody(c *Client, r *Request) (contentType string, body io.Reader, err error) {
+func parseRequestBody(r *Request) (contentType string, body io.Reader, err error) {
 	if !isPayloadSupported(r.Method) {
 		return
 	}
-	// todo: 增加 formdata 的处理
+	if r.isMultiPart {
+		return formDataContentType, nil, nil
+	} else if len(r.FormData) > 0 {
+		return formContentType, nil, nil
+	}
 	var bodyBytes []byte
 	contentType = r.Header.Get(hdrContentTypeKey)
 	if isStringEmpty(contentType) {
@@ -175,7 +181,7 @@ func bindRequestBody(c *Client, r *Request) (contentType string, body io.Reader,
 }
 
 func createHTTPRequest(c *Client, r *Request) (err error) {
-	contentType, body, err := bindRequestBody(c, r)
+	contentType, body, err := parseRequestBody(r)
 	if err != nil {
 		return err
 	}
@@ -189,67 +195,57 @@ func createHTTPRequest(c *Client, r *Request) (err error) {
 			r.RawRequest.ResetBody()
 		}
 		r.RawRequest.SetMultipartFormData(r.MultipartFormParams)
-		// todo
-		//r.RawRequest.SetFiles(r.fileParam)
+		r.RawRequest.SetFiles(r.File)
+	} else if contentType == formContentType && isPayloadSupported(r.Method) {
+		r.RawRequest.SetFormDataFromValues(r.FormData)
 	}
+
 	for key, values := range r.Header {
 		for _, val := range values {
 			r.RawRequest.Header.Add(key, val)
 		}
 	}
+	for _, cookie := range r.Cookie {
+		r.RawRequest.SetCookie(cookie.Name, cookie.Value)
+	}
+
 	r.RawRequest.SetOptions(r.RequestOptions...)
 
 	return nil
 }
 
-//func parseRequestBody(c *Client, r *Request) error {
-//	switch {
-//	case r.RawRequest.HasMultipartForm(): // Handling Multipart
-//		handleMultipart(c, r)
-//	case len(c.FormData) > 0 || len(r.FormData) > 0: // Handling Form Data
-//		handleFormData(c, r)
-//		//case r.RawRequest.Body() != nil: // Handling Request body
-//		//	handleContentType(c, r)
-//	}
-//
-//	return nil
-//}
-//
-//func handleMultipart(c *Client, r *Request) {
-//	r.RawRequest.SetMultipartFormData(c.FormData)
-//
-//	r.Header.Set(hdrContentTypeKey, formDataContentType)
-//}
-
-//func handleFormData(c *Client, r *Request) {
-//	r.RawRequest.SetFormData(c.FormData)
-//
-//	r.Header.Set(hdrContentTypeKey, formContentType)
-//}
-
-//func handleContentType(c *Client, r *Request) {
-//	contentType := r.Header.Get(hdrContentTypeKey)
-//	if len(strings.TrimSpace(contentType)) == 0 {
-//		contentType = DetectContentType(r.RawRequest.Body())
-//		r.Header.Set(hdrContentTypeKey, contentType)
-//	}
-//}
-
-func DetectContentType(body interface{}) string {
-	contentType := plainTextType
-	kind := reflect.Indirect(reflect.ValueOf(body)).Kind()
-	switch kind {
-	case reflect.Struct, reflect.Map:
-		contentType = jsonContentType
-	case reflect.String:
-		contentType = plainTextType
-	default:
-		if b, ok := body.([]byte); ok {
-			contentType = http.DetectContentType(b)
-		} else if kind == reflect.Slice {
-			contentType = jsonContentType
+func parseResponseBody(c *Client, resp *Response) (err error) {
+	if resp.StatusCode() == http.StatusNoContent {
+		return
+	}
+	// Handles only JSON or XML content type
+	ct := resp.Header().Get(hdrContentTypeKey)
+	isError := resp.IsError()
+	if isError {
+		jsonByte, jsonErr := json.Marshal(map[string]interface{}{
+			"status_code": resp.RawResponse.StatusCode(),
+			"body":        resp.BodyString(),
+		})
+		if jsonErr != nil {
+			return jsonErr
+		}
+		err = fmt.Errorf(string(jsonByte))
+	} else if resp.Request.Result != nil {
+		if isJSONType(ct) || isXMLType(ct) {
+			err = unmarshalContent(ct, resp.Body(), resp.Request.Result)
+			return
 		}
 	}
+	return
+}
 
-	return contentType
+// unmarshalContent content into object from JSON or XML
+func unmarshalContent(ct string, b []byte, d interface{}) (err error) {
+	if isJSONType(ct) {
+		err = json.Unmarshal(b, d)
+	} else if isXMLType(ct) {
+		err = xml.Unmarshal(b, d)
+	}
+
+	return
 }

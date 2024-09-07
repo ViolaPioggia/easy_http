@@ -18,14 +18,16 @@ package easy_http
 
 import (
 	"context"
-	"github.com/cloudwego/hertz/pkg/app/client"
-	"github.com/cloudwego/hertz/pkg/common/config"
-	"github.com/cloudwego/hertz/pkg/protocol"
-	"github.com/cloudwego/hertz/pkg/protocol/consts"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
 	"sync"
+
+	"github.com/cloudwego/hertz/pkg/app/client"
+	"github.com/cloudwego/hertz/pkg/common/config"
+	"github.com/cloudwego/hertz/pkg/protocol"
+	"github.com/cloudwego/hertz/pkg/protocol/consts"
 )
 
 type Client struct {
@@ -50,10 +52,10 @@ type (
 var (
 	hdrContentTypeKey = http.CanonicalHeaderKey(consts.HeaderContentType)
 
-	plainTextType       = "text/plain; charset=utf-8"
-	jsonContentType     = "application/json"
-	formContentType     = "application/x-www-form-urlencoded"
-	formDataContentType = "multipart/form-data"
+	plainTextType       = consts.MIMETextPlainUTF8
+	jsonContentType     = consts.MIMEApplicationJSON
+	formContentType     = consts.MIMEApplicationHTMLForm
+	formDataContentType = consts.MIMEMultipartPOSTForm
 )
 
 func createClient(cc *client.Client, opts ...config.ClientOption) *Client {
@@ -70,7 +72,9 @@ func createClient(cc *client.Client, opts ...config.ClientOption) *Client {
 		createHTTPRequest,
 	}
 
-	c.afterResponse = []ResponseMiddleware{}
+	c.afterResponse = []ResponseMiddleware{
+		parseResponseBody,
+	}
 
 	return c
 }
@@ -89,7 +93,11 @@ func (c *Client) R() *Request {
 
 func (c *Client) EnableServiceDiscovery() *Client {
 	c.enableDiscovery = true
+	return c
+}
 
+func (c *Client) UseMiddleware(mws ...client.Middleware) *Client {
+	c.client.Use(mws...)
 	return c
 }
 
@@ -97,6 +105,7 @@ func (c *Client) AddHeader(header, value string) *Client {
 	c.header.Add(header, value)
 	return c
 }
+
 func (c *Client) AddHeaders(headers map[string]string) *Client {
 	for k, v := range headers {
 		c.AddHeader(k, v)
@@ -113,19 +122,21 @@ func (c *Client) SetBaseURL(url string) *Client {
 	return c
 }
 
+func (c *Client) SetServiceName(name string) *Client {
+	c.SetBaseURL(fmt.Sprintf("http://%s", name))
+	return c
+}
+
 func (c *Client) NewRequest() *Request {
 	return c.R()
 }
 
-// todo: execute 实现有问题，参考 Hertztool 生成代码重新实现
 func (c *Client) execute(req *Request) (*Response, error) {
 	// Lock the post-request hooks.
 	c.afterResponseLock.RLock()
 	defer c.afterResponseLock.RUnlock()
-
 	// Apply Request middleware
 	var err error
-
 	for _, f := range c.beforeRequest {
 		if err = f(c, req); err != nil {
 			return nil, err
@@ -135,10 +146,10 @@ func (c *Client) execute(req *Request) (*Response, error) {
 	if hostHeader := req.Header.Get("Host"); hostHeader != "" {
 		req.RawRequest.SetHost(hostHeader)
 	}
+	req.hasCreate = true
 
 	resp := &protocol.Response{}
 	err = c.client.Do(context.Background(), req.RawRequest, resp)
-
 	response := &Response{
 		Request:     req,
 		RawResponse: resp,

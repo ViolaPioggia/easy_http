@@ -18,7 +18,7 @@ package easy_http
 
 import (
 	"context"
-	"io"
+	"fmt"
 	"net/http"
 	"net/url"
 	"reflect"
@@ -28,6 +28,7 @@ import (
 	"github.com/cloudwego/hertz/pkg/common/config"
 	"github.com/cloudwego/hertz/pkg/protocol"
 	"github.com/cloudwego/hertz/pkg/protocol/consts"
+	"github.com/li-jin-gou/http2curl"
 )
 
 type Request struct {
@@ -41,30 +42,28 @@ type Request struct {
 	Body                interface{}
 	PathParams          map[string]string
 	MultipartFormParams map[string]string
+	File                map[string]string
 	RawRequest          *protocol.Request
 	Ctx                 context.Context
 	RequestOptions      []config.RequestOption
 	Result              interface{}
-	Error               interface{}
+	Error               error
 	isMultiPart         bool
-}
-
-type File struct {
-	Name      string
-	ParamName string
-	io.Reader
+	hasCreate           bool
 }
 
 func (r *Request) SetQueryParam(param, value string) *Request {
 	r.QueryParam.Set(param, value)
 	return r
 }
+
 func (r *Request) SetQueryParams(params map[string]string) *Request {
 	for p, v := range params {
 		r.SetQueryParam(p, v)
 	}
 	return r
 }
+
 func (r *Request) SetQueryParamsFromValues(params url.Values) *Request {
 	for p, v := range params {
 		for _, pv := range v {
@@ -74,6 +73,7 @@ func (r *Request) SetQueryParamsFromValues(params url.Values) *Request {
 	}
 	return r
 }
+
 func (r *Request) SetQueryString(query string) *Request {
 	q, err := url.ParseQuery(strings.TrimSpace(query))
 	if err != nil {
@@ -83,16 +83,19 @@ func (r *Request) SetQueryString(query string) *Request {
 	r.SetQueryParamsFromValues(q)
 	return r
 }
+
 func (r *Request) AddQueryParam(params, value string) *Request {
 	r.QueryParam.Add(params, value)
 	return r
 }
+
 func (r *Request) AddQueryParams(params map[string]string) *Request {
 	for k, v := range params {
 		r.AddQueryParam(k, v)
 	}
 	return r
 }
+
 func (r *Request) AddQueryParamsFromValues(params url.Values) *Request {
 	for p, v := range params {
 		for _, pv := range v {
@@ -106,6 +109,7 @@ func (r *Request) SetPathParam(param, value string) *Request {
 	r.PathParams[param] = value
 	return r
 }
+
 func (r *Request) SetPathParams(params map[string]string) *Request {
 	for p, v := range params {
 		r.SetPathParam(p, v)
@@ -117,26 +121,31 @@ func (r *Request) SetHeader(header, value string) *Request {
 	r.Header.Set(header, value)
 	return r
 }
+
 func (r *Request) SetHeaders(headers map[string]string) *Request {
 	for h, v := range headers {
 		r.SetHeader(h, v)
 	}
 	return r
 }
+
 func (r *Request) SetHTTPHeader(header http.Header) *Request {
 	r.Header = header
 	return r
 }
+
 func (r *Request) AddHeader(header, value string) *Request {
 	r.Header.Add(header, value)
 	return r
 }
+
 func (r *Request) AddHeaders(headers map[string]string) *Request {
 	for k, v := range headers {
 		r.AddHeader(k, v)
 	}
 	return r
 }
+
 func (r *Request) AddHTTPHeader(header http.Header) *Request {
 	for key, value := range header {
 		for _, v := range value {
@@ -145,18 +154,22 @@ func (r *Request) AddHTTPHeader(header http.Header) *Request {
 	}
 	return r
 }
+
 func (r *Request) SetContentType(ct string) *Request {
 	r.Header.Add(consts.HeaderContentType, ct)
 	return r
 }
+
 func (r *Request) SetContentTypeJSON() *Request {
 	r.Header.Add(consts.HeaderContentType, consts.MIMEApplicationJSON)
 	return r
 }
+
 func (r *Request) SetContentTypeFormData() *Request {
 	r.Header.Add(consts.HeaderContentType, consts.MIMEMultipartPOSTForm)
 	return r
 }
+
 func (r *Request) SetContentTypeUrlEncode() *Request {
 	r.Header.Add(consts.HeaderContentType, consts.MIMEApplicationHTMLForm)
 	return r
@@ -167,6 +180,7 @@ func (r *Request) SetCookie(hc *http.Cookie) *Request {
 	r.Cookie = append(r.Cookie, hc)
 	return r
 }
+
 func (r *Request) SetCookies(rs []*http.Cookie) *Request {
 	r.Cookie = append(r.Cookie, rs...)
 	return r
@@ -175,27 +189,15 @@ func (r *Request) SetCookies(rs []*http.Cookie) *Request {
 func (r *Request) SetBody(body interface{}) *Request {
 	r.Body = body
 	return r
-	//t := reflect.Indirect(reflect.ValueOf(body)).Type().Kind()
-	//
-	//switch t {
-	//case reflect.String:
-	//	r.RawRequest.SetBodyString(body.(string))
-	//case reflect.TypeOf([]byte{}).Kind():
-	//	r.RawRequest.SetBody(body.([]byte))
-	//case reflect.TypeOf(io.Reader(nil)).Kind():
-	//	r.RawRequest.SetBodyStream(body.(io.Reader), -1)
-	//default:
-	//	panic("unsupported body type")
-	//}
-	//
-	//return r
 }
+
 func (r *Request) SetFormData(data map[string]string) *Request {
 	for k, v := range data {
 		r.FormData.Set(k, v)
 	}
 	return r
 }
+
 func (r *Request) SetFormDataFromValues(data url.Values) *Request {
 	for key, value := range data {
 		for _, v := range value {
@@ -205,19 +207,24 @@ func (r *Request) SetFormDataFromValues(data url.Values) *Request {
 	return r
 }
 
-// todo: 文件上传重新实现
-func (r *Request) SetFiles(files map[string]string) *Request {
+func (r *Request) SetMultipartFormData(data map[string]string) *Request {
 	r.isMultiPart = true
-	for f, fp := range files {
-		r.FormData.Set("@"+f, fp)
-	}
+	r.MultipartFormParams = data
 	return r
 }
 
-func (r *Request) SetFileReader(param, fileName string, reader io.Reader) *Request {
-	r.RawRequest.SetFileReader(param, fileName, reader)
+func (r *Request) SetFile(filename, filepath string) *Request {
+	r.isMultiPart = true
+	r.File[filename] = filepath
 	return r
 }
+
+func (r *Request) SetFiles(files map[string]string) *Request {
+	r.isMultiPart = true
+	r.File = files
+	return r
+}
+
 func (r *Request) SetResult(res interface{}) *Request {
 	if res != nil {
 		vv := reflect.ValueOf(res)
@@ -235,16 +242,23 @@ func (r *Request) withContext(ctx context.Context) *Request {
 	return r
 }
 
+func (r *Request) WithDC() *Request {
+	return r
+}
+
 func (r *Request) WithCluster() *Request {
 	return r
 }
+
 func (r *Request) WithEnv() *Request {
 	return r
 }
+
 func (r *Request) WithRequestTimeout(t time.Duration) *Request {
 	r.RawRequest.SetOptions(config.WithRequestTimeout(t))
 	return r
 }
+
 func (r *Request) Get(ctx context.Context, url string) (*Response, error) {
 	r.withContext(ctx)
 	return r.Execute(consts.MethodGet, url)
@@ -285,14 +299,23 @@ func (r *Request) Send(ctx context.Context) (*Response, error) {
 	return r.Execute(r.Method, r.URL)
 }
 
-// todo
 func (r *Request) ToCurl() (string, error) {
-	return "", nil
+	if !r.hasCreate {
+		return "", fmt.Errorf("request has not been create")
+	}
+	c, err := http2curl.GetCurlCommandHertz(r.RawRequest)
+	if err != nil {
+		return "", err
+	}
+	return c.String(), nil
 }
 
 func (r *Request) Execute(method, url string) (*Response, error) {
 	r.Method = method
 	r.URL = url
+	if r.Error != nil {
+		return nil, r.Error
+	}
 
 	return r.client.execute(r)
 }

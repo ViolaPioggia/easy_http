@@ -18,16 +18,18 @@ package easy_http
 
 import (
 	"bytes"
-	"github.com/cloudwego/hertz/pkg/protocol"
 	"io"
 	"net/http"
-)
 
-// done
+	"github.com/cloudwego/hertz/pkg/protocol"
+)
 
 type Response struct {
 	Request     *Request
 	RawResponse *protocol.Response
+
+	bodyByte []byte
+	size     int64
 }
 
 func (r *Response) Body() []byte {
@@ -55,7 +57,15 @@ func (r *Response) Result() interface{} {
 	return r.Request.Result
 }
 
-func (r *Response) Error() interface{} {
+func (r *Response) GetRequest() *Request {
+	return r.Request
+}
+
+func (r *Response) GetRawResponse() *protocol.Response {
+	return r.RawResponse
+}
+
+func (r *Response) Error() error {
 	return r.Request.Error
 }
 
