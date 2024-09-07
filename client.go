@@ -19,6 +19,7 @@ package easy_http
 import (
 	"context"
 	"github.com/cloudwego/hertz/pkg/app/client"
+	"github.com/cloudwego/hertz/pkg/common/config"
 	"github.com/cloudwego/hertz/pkg/protocol"
 	"net/http"
 	"net/url"
@@ -27,11 +28,8 @@ import (
 )
 
 type Client struct {
-	QueryParam url.Values
-	FormData   map[string]string
-	PathParams map[string]string
-	Header     http.Header
-	Cookies    []*http.Cookie
+	baseURL string
+	header  http.Header
 
 	beforeRequest       []RequestMiddleware
 	udBeforeRequest     []RequestMiddleware
@@ -39,7 +37,10 @@ type Client struct {
 	afterResponseLock   *sync.RWMutex
 	udBeforeRequestLock *sync.RWMutex
 
-	client *client.Client
+	enableDiscovery bool
+
+	client  *client.Client
+	options []config.ClientOption
 }
 
 type (
@@ -56,17 +57,13 @@ var (
 	formDataContentType = "multipart/form-data"
 )
 
-func createClient(cc *client.Client) *Client {
+func createClient(cc *client.Client, opts ...config.ClientOption) *Client {
 	c := &Client{
-		QueryParam: url.Values{},
-		PathParams: make(map[string]string),
-		Header:     http.Header{},
-		Cookies:    make([]*http.Cookie, 0),
-
 		udBeforeRequestLock: &sync.RWMutex{},
 		afterResponseLock:   &sync.RWMutex{},
 
-		client: cc,
+		client:  cc,
+		options: opts,
 	}
 
 	c.beforeRequest = []RequestMiddleware{
@@ -82,146 +79,6 @@ func createClient(cc *client.Client) *Client {
 	return c
 }
 
-func (c *Client) SetQueryParam(param, value string) *Client {
-	c.QueryParam.Set(param, value)
-	return c
-}
-
-func (c *Client) SetQueryParams(params map[string]string) *Client {
-	for k, v := range params {
-		c.QueryParam.Set(k, v)
-	}
-	return c
-}
-
-func (c *Client) SetQueryParamsFromValues(params url.Values) *Client {
-	for k, v := range params {
-		for _, v1 := range v {
-			c.QueryParam.Add(k, v1)
-		}
-	}
-	return c
-}
-
-func (c *Client) SetQueryString(query string) *Client {
-	str := strings.Split(query, "&")
-	for _, v := range str {
-		kv := strings.Split(v, "=")
-		if len(kv) == 2 {
-			c.QueryParam.Set(kv[0], kv[1])
-		}
-
-	}
-	return c
-}
-
-func (c *Client) AddQueryParam(param, value string) *Client {
-	c.QueryParam.Add(param, value)
-	return c
-}
-
-func (c *Client) AddQueryParams(params map[string]string) *Client {
-	for k, v := range params {
-		c.QueryParam.Add(k, v)
-	}
-	return c
-}
-
-func (c *Client) SetPathParam(param, value string) *Client {
-	c.PathParams[param] = value
-	return c
-}
-
-func (c *Client) SetPathParams(params map[string]string) *Client {
-	for k, v := range params {
-		c.PathParams[k] = v
-	}
-	return c
-}
-
-func (c *Client) SetHeader(header, value string) *Client {
-	c.Header.Set(header, value)
-	return c
-}
-
-func (c *Client) SetHeaders(headers map[string]string) *Client {
-	for k, v := range headers {
-		c.Header.Set(k, v)
-	}
-	return c
-}
-
-func (c *Client) SetHeaderMultiValues(headers map[string][]string) *Client {
-	for k, header := range headers {
-		for _, v := range header {
-			c.Header.Add(k, v)
-		}
-	}
-	return c
-}
-
-func (c *Client) AddHeader(header, value string) *Client {
-	c.Header.Add(header, value)
-	return c
-}
-
-func (c *Client) AddHeaders(headers map[string]string) *Client {
-	for k, v := range headers {
-		c.Header.Add(k, v)
-	}
-	return c
-}
-
-func (c *Client) AddHeaderMultiValues(headers map[string][]string) *Client {
-	for k, header := range headers {
-		for _, v := range header {
-			c.Header.Add(k, v)
-		}
-	}
-	return c
-}
-
-func (c *Client) SetContentType(contentType string) *Client {
-	c.Header.Set("Content-Type", contentType)
-	return c
-}
-
-func (c *Client) SetJSONContentType() *Client {
-	c.Header.Set("Content-Type", "application/json")
-	return c
-}
-
-func (c *Client) SetXMLContentType() *Client {
-	c.Header.Set("Content-Type", "application/xml")
-	return c
-}
-
-func (c *Client) SetHTMLContentType() *Client {
-	c.Header.Set("Content-Type", "text/html")
-	return c
-}
-
-func (c *Client) SetFormContentType() *Client {
-	c.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	return c
-
-}
-
-func (c *Client) SetFormData() *Client {
-	c.Header.Set("Content-Type", "multipart/form-data")
-	return c
-}
-
-func (c *Client) SetCookie(hc *http.Cookie) *Client {
-	c.Cookies = append(c.Cookies, hc)
-	return c
-}
-
-func (c *Client) SetCookies(hcs []*http.Cookie) *Client {
-	c.Cookies = append(c.Cookies, hcs...)
-	return c
-}
-
 func (c *Client) R() *Request {
 	r := &Request{
 		QueryParam: url.Values{},
@@ -232,6 +89,21 @@ func (c *Client) R() *Request {
 		client: c,
 	}
 	return r
+}
+
+func (c *Client) EnableServiceDiscovery() *Client {
+	c.enableDiscovery = true
+
+	return c
+}
+
+func (c *Client) GetClient() *client.Client {
+	return c.client
+}
+
+func (c *Client) SetBaseURL(url string) *Client {
+	c.baseURL = strings.TrimRight(url, "/")
+	return c
 }
 
 func (c *Client) NewRequest() *Request {

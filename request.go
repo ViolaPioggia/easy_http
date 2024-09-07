@@ -18,8 +18,6 @@ package easy_http
 
 import (
 	"context"
-	"github.com/cloudwego/hertz/pkg/app/client/discovery"
-	"github.com/cloudwego/hertz/pkg/app/middlewares/client/sd"
 	"io"
 	"net/http"
 	"net/url"
@@ -29,6 +27,7 @@ import (
 
 	"github.com/cloudwego/hertz/pkg/common/config"
 	"github.com/cloudwego/hertz/pkg/protocol"
+	"github.com/cloudwego/hertz/pkg/protocol/consts"
 )
 
 type Request struct {
@@ -38,6 +37,8 @@ type Request struct {
 	QueryParam     url.Values
 	FormData       url.Values
 	Header         http.Header
+	Cookie         []*http.Cookie
+	Body           interface{}
 	PathParams     map[string]string
 	RawRequest     *protocol.Request
 	Ctx            context.Context
@@ -46,29 +47,6 @@ type Request struct {
 	Error          interface{}
 	isMultiPart    bool
 }
-
-const (
-	// MethodGet HTTP method
-	MethodGet = "GET"
-
-	// MethodPost HTTP method
-	MethodPost = "POST"
-
-	// MethodPut HTTP method
-	MethodPut = "PUT"
-
-	// MethodDelete HTTP method
-	MethodDelete = "DELETE"
-
-	// MethodPatch HTTP method
-	MethodPatch = "PATCH"
-
-	// MethodHead HTTP method
-	MethodHead = "HEAD"
-
-	// MethodOptions HTTP method
-	MethodOptions = "OPTIONS"
-)
 
 type File struct {
 	Name      string
@@ -89,13 +67,19 @@ func (r *Request) SetQueryParams(params map[string]string) *Request {
 func (r *Request) SetQueryParamsFromValues(params url.Values) *Request {
 	for p, v := range params {
 		for _, pv := range v {
+			// use 'add' to avoid slice case
 			r.QueryParam.Add(p, pv)
 		}
 	}
 	return r
 }
 func (r *Request) SetQueryString(query string) *Request {
-	r.RawRequest.SetQueryString(query)
+	q, err := url.ParseQuery(strings.TrimSpace(query))
+	if err != nil {
+		r.Error = err
+		return r
+	}
+	r.SetQueryParamsFromValues(q)
 	return r
 }
 func (r *Request) AddQueryParam(params, value string) *Request {
@@ -108,6 +92,15 @@ func (r *Request) AddQueryParams(params map[string]string) *Request {
 	}
 	return r
 }
+func (r *Request) AddQueryParamsFromValues(params url.Values) *Request {
+	for p, v := range params {
+		for _, pv := range v {
+			r.QueryParam.Add(p, pv)
+		}
+	}
+	return r
+}
+
 func (r *Request) SetPathParam(param, value string) *Request {
 	r.PathParams[param] = value
 	return r
@@ -123,18 +116,14 @@ func (r *Request) SetHeader(header, value string) *Request {
 	r.Header.Set(header, value)
 	return r
 }
-
 func (r *Request) SetHeaders(headers map[string]string) *Request {
 	for h, v := range headers {
 		r.SetHeader(h, v)
 	}
 	return r
 }
-
-func (r *Request) SetHeaderMultiValues(headers map[string][]string) *Request {
-	for key, values := range headers {
-		r.SetHeader(key, strings.Join(values, ", "))
-	}
+func (r *Request) SetHTTPHeader(header http.Header) *Request {
+	r.Header = header
 	return r
 }
 func (r *Request) AddHeader(header, value string) *Request {
@@ -147,39 +136,58 @@ func (r *Request) AddHeaders(headers map[string]string) *Request {
 	}
 	return r
 }
-func (r *Request) AddHeaderMultiValues(headers map[string][]string) *Request {
-	for key, value := range headers {
-		r.AddHeader(key, strings.Join(value, ", "))
+func (r *Request) AddHTTPHeader(header http.Header) *Request {
+	for key, value := range header {
+		for _, v := range value {
+			r.Header.Add(key, v)
+		}
 	}
+	return r
+}
+func (r *Request) SetContentType(ct string) *Request {
+	r.Header.Add(consts.HeaderContentType, ct)
+	return r
+}
+func (r *Request) SetContentTypeJSON() *Request {
+	r.Header.Add(consts.HeaderContentType, consts.MIMEApplicationJSON)
+	return r
+}
+func (r *Request) SetContentTypeFormData() *Request {
+	r.Header.Add(consts.HeaderContentType, consts.MIMEMultipartPOSTForm)
+	return r
+}
+func (r *Request) SetContentTypeUrlEncode() *Request {
+	r.Header.Add(consts.HeaderContentType, consts.MIMEApplicationHTMLForm)
 	return r
 }
 
+// todo 确认 cookie 的具体实现
 func (r *Request) SetCookie(hc *http.Cookie) *Request {
-	r.RawRequest.SetCookie(hc.Name, hc.Value)
+	r.Cookie = append(r.Cookie, hc)
 	return r
 }
 func (r *Request) SetCookies(rs []*http.Cookie) *Request {
-	for _, c := range rs {
-		r.RawRequest.SetCookie(c.Name, c.Value)
-	}
+	r.Cookie = append(r.Cookie, rs...)
 	return r
 }
 
 func (r *Request) SetBody(body interface{}) *Request {
-	t := reflect.Indirect(reflect.ValueOf(body)).Type().Kind()
-
-	switch t {
-	case reflect.String:
-		r.RawRequest.SetBodyString(body.(string))
-	case reflect.TypeOf([]byte{}).Kind():
-		r.RawRequest.SetBody(body.([]byte))
-	case reflect.TypeOf(io.Reader(nil)).Kind():
-		r.RawRequest.SetBodyStream(body.(io.Reader), -1)
-	default:
-		panic("unsupported body type")
-	}
-
+	r.Body = body
 	return r
+	//t := reflect.Indirect(reflect.ValueOf(body)).Type().Kind()
+	//
+	//switch t {
+	//case reflect.String:
+	//	r.RawRequest.SetBodyString(body.(string))
+	//case reflect.TypeOf([]byte{}).Kind():
+	//	r.RawRequest.SetBody(body.([]byte))
+	//case reflect.TypeOf(io.Reader(nil)).Kind():
+	//	r.RawRequest.SetBodyStream(body.(io.Reader), -1)
+	//default:
+	//	panic("unsupported body type")
+	//}
+	//
+	//return r
 }
 func (r *Request) SetFormData(data map[string]string) *Request {
 	for k, v := range data {
@@ -195,6 +203,8 @@ func (r *Request) SetFormDataFromValues(data url.Values) *Request {
 	}
 	return r
 }
+
+// todo: 文件上传重新实现
 func (r *Request) SetFiles(files map[string]string) *Request {
 	r.isMultiPart = true
 	for f, fp := range files {
@@ -219,113 +229,69 @@ func (r *Request) SetResult(res interface{}) *Request {
 	return r
 }
 
-func (r *Request) WithContext(ctx context.Context) *Request {
+func (r *Request) withContext(ctx context.Context) *Request {
 	r.Ctx = ctx
 	return r
 }
 
-const (
-	defaultNetwork = "tcp"
-)
-
-type customizedResolver struct {
-	Address string
-}
-
-var _ discovery.Resolver = (*customizedResolver)(nil)
-
-// NewResolver create a service resolver.
-func NewResolver(address string) discovery.Resolver {
-	return &customizedResolver{
-		Address: address,
-	}
-}
-
-// Target return a description for the given target that is suitable for being a key for cache.
-func (c *customizedResolver) Target(_ context.Context, target *discovery.TargetInfo) (description string) {
-	return target.Host
-}
-
-// Name returns the name of the resolver.
-func (c *customizedResolver) Name() string {
-	return "easy_http"
-}
-
-// Resolve a service info by desc.
-func (c *customizedResolver) Resolve(_ context.Context, desc string) (discovery.Result, error) {
-	var eps []discovery.Instance
-
-	tags := map[string]string{}
-	eps = append(eps, discovery.NewInstance(
-		defaultNetwork,
-		c.Address,
-		1,
-		tags,
-	))
-
-	return discovery.Result{
-		CacheKey:  desc,
-		Instances: eps,
-	}, nil
-}
-
-func (r *Request) WithDC(dc string) *Request {
-	resolver := NewResolver(dc)
-	r.client.client.Use(sd.Discovery(resolver))
-	return r
-}
 func (r *Request) WithCluster() *Request {
 	return r
 }
 func (r *Request) WithEnv() *Request {
 	return r
 }
-func (r *Request) WIthCallTimeout(t time.Duration) *Request {
-	r.RawRequest.SetOptions(config.WithDialTimeout(t))
+func (r *Request) WithRequestTimeout(t time.Duration) *Request {
+	r.RawRequest.SetOptions(config.WithRequestTimeout(t))
 	return r
 }
-func (r *Request) Get(url string) (*Response, error) {
-	return r.Execute(MethodGet, url)
+func (r *Request) Get(ctx context.Context, url string) (*Response, error) {
+	r.withContext(ctx)
+	return r.Execute(consts.MethodGet, url)
 }
 
-func (r *Request) Head(url string) (*Response, error) {
-	return r.Execute(MethodHead, url)
+func (r *Request) Head(ctx context.Context, url string) (*Response, error) {
+	r.withContext(ctx)
+	return r.Execute(consts.MethodHead, url)
 }
 
-func (r *Request) Post(url string) (*Response, error) {
-	return r.Execute(MethodPost, url)
+func (r *Request) Post(ctx context.Context, url string) (*Response, error) {
+	r.withContext(ctx)
+	return r.Execute(consts.MethodPost, url)
 }
 
-func (r *Request) Put(url string) (*Response, error) {
-	return r.Execute(MethodPut, url)
+func (r *Request) Put(ctx context.Context, url string) (*Response, error) {
+	r.withContext(ctx)
+	return r.Execute(consts.MethodPut, url)
 }
 
-func (r *Request) Delete(url string) (*Response, error) {
-	return r.Execute(MethodDelete, url)
+func (r *Request) Delete(ctx context.Context, url string) (*Response, error) {
+	r.withContext(ctx)
+	return r.Execute(consts.MethodDelete, url)
 }
 
-func (r *Request) Options(url string) (*Response, error) {
-	return r.Execute(MethodOptions, url)
+func (r *Request) Options(ctx context.Context, url string) (*Response, error) {
+	r.withContext(ctx)
+	return r.Execute(consts.MethodOptions, url)
 }
 
-func (r *Request) Patch(url string) (*Response, error) {
-	return r.Execute(MethodPatch, url)
+func (r *Request) Patch(ctx context.Context, url string) (*Response, error) {
+	r.withContext(ctx)
+	return r.Execute(consts.MethodPatch, url)
 }
 
-func (r *Request) Send() (*Response, error) {
+func (r *Request) Send(ctx context.Context) (*Response, error) {
+	r.withContext(ctx)
 	return r.Execute(r.Method, r.URL)
+}
+
+// todo
+func (r *Request) ToCurl() (string, error) {
+	return "", nil
 }
 
 func (r *Request) Execute(method, url string) (*Response, error) {
 	r.Method = method
+	r.URL = url
 
-	r.RawRequest.SetRequestURI(url)
-	res := &Response{
-		Request:     r,
-		RawResponse: &protocol.Response{},
-	}
-
-	var err error
-	res, err = r.client.execute(r)
-	return res, err
+	return r.client.execute(r)
 }

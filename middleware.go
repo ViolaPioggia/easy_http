@@ -24,25 +24,13 @@ import (
 )
 
 func parseRequestURL(c *Client, r *Request) error {
-	if l := len(c.PathParams) + len(r.PathParams); l > 0 {
-		params := make(map[string]string, l)
-
-		// GitHub #103 Path Params
+	if len(r.PathParams) > 0 {
 		for p, v := range r.PathParams {
-			params[p] = url.PathEscape(v)
-		}
-		for p, v := range c.PathParams {
-			if _, ok := params[p]; !ok {
-				params[p] = url.PathEscape(v)
+			if strings.HasSuffix(r.URL, "*"+p) { // "*" must be at end of route
+				r.URL = strings.Replace(r.URL, "*"+p, url.PathEscape(v), 1)
+				continue
 			}
-		}
-
-		if len(params) > 0 {
-
-		}
-
-		for k, v := range params {
-			r.URL = strings.Replace(r.URL, "{"+k+"}", v, 1)
+			r.URL = strings.Replace(r.URL, ":"+p, url.PathEscape(v), -1)
 		}
 	}
 
@@ -52,17 +40,21 @@ func parseRequestURL(c *Client, r *Request) error {
 		return err
 	}
 
-	// Adding Query Param
-	if len(c.QueryParam)+len(r.QueryParam) > 0 {
-		for k, v := range c.QueryParam {
-			// skip query parameter if it was set in request
-			if _, ok := r.QueryParam[k]; ok {
-				continue
-			}
-
-			r.QueryParam[k] = v[:]
+	// If Request.URL is relative path then added c.HostURL into
+	// the request URL otherwise Request.URL will be used as-is
+	if !reqURL.IsAbs() {
+		r.URL = reqURL.String()
+		if len(r.URL) > 0 && r.URL[0] != '/' {
+			r.URL = "/" + r.URL
 		}
+		reqURL, err = url.Parse(c.baseURL + r.URL)
+		if err != nil {
+			return err
+		}
+	}
 
+	// Adding Query Param
+	if len(r.QueryParam) > 0 {
 		if len(r.QueryParam) > 0 {
 			if len(strings.TrimSpace(reqURL.RawQuery)) == 0 {
 				reqURL.RawQuery = r.QueryParam.Encode()
@@ -78,12 +70,23 @@ func parseRequestURL(c *Client, r *Request) error {
 }
 
 func parseRequestHeader(c *Client, r *Request) error {
-	for k, v := range c.Header {
-		if _, ok := r.Header[k]; ok {
-			continue
+	hdr := make(http.Header)
+	if c.header != nil {
+		for k := range c.header {
+			hdr[k] = append(hdr[k], c.header[k]...)
 		}
-		r.Header[k] = v[:]
 	}
+
+	for k := range r.Header {
+		hdr.Del(k)
+		hdr[k] = append(hdr[k], r.Header[k]...)
+	}
+
+	if len(r.FormData) != 0 {
+		hdr.Add(hdrContentTypeKey, formContentType)
+	}
+
+	r.Header = hdr
 
 	return nil
 }

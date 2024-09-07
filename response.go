@@ -21,11 +21,12 @@ import (
 	"github.com/cloudwego/hertz/pkg/protocol"
 	"io"
 	"net/http"
-	"strings"
 )
 
+// done
+
 type Response struct {
-	Request     *Request // 上面的 Request 结构体
+	Request     *Request
 	RawResponse *protocol.Response
 }
 
@@ -40,7 +41,7 @@ func (r *Response) BodyString() string {
 	if r.RawResponse == nil {
 		return ""
 	}
-	return strings.TrimSpace(string(r.RawResponse.Body()))
+	return string(r.RawResponse.Body())
 }
 
 func (r *Response) StatusCode() int {
@@ -64,10 +65,7 @@ func (r *Response) Header() http.Header {
 	}
 	header := make(http.Header)
 	r.RawResponse.Header.VisitAll(func(key, value []byte) {
-		keyStr := string(key)
-		values := header[keyStr]
-		values = append(values, string(value))
-		header[keyStr] = values
+		header.Add(string(key), string(value))
 	})
 	return header
 }
@@ -86,6 +84,7 @@ func (r *Response) Cookies() []*http.Cookie {
 
 	return cookies
 }
+
 func (r *Response) ToRawHTTPResponse() string {
 	resp := &http.Response{
 		StatusCode: r.StatusCode(),

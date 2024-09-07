@@ -7,10 +7,10 @@ import (
 
 func TestSetQueryParam(t *testing.T) {
 	c := MustNewClient(&Option{})
-	c.SetQueryParam("test1", "test1")
-	c.SetQueryParams(map[string]string{"test2": "test2", "test3": "test3"})
-	c.SetQueryParamsFromValues(map[string][]string{"test4": {"test41", "test42"}})
-	c.SetQueryString("test5=test5")
+
+	c.NewRequest().SetQueryParam()
+
+	c.NewRequest().set
 
 	assert.Equal(t, "test1", c.QueryParam.Get("test1"))
 	assert.Equal(t, "test2", c.QueryParam.Get("test2"))
