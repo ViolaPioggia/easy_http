@@ -31,21 +31,22 @@ import (
 )
 
 type Request struct {
-	client         *Client
-	URL            string
-	Method         string
-	QueryParam     url.Values
-	FormData       url.Values
-	Header         http.Header
-	Cookie         []*http.Cookie
-	Body           interface{}
-	PathParams     map[string]string
-	RawRequest     *protocol.Request
-	Ctx            context.Context
-	RequestOptions []config.RequestOption
-	Result         interface{}
-	Error          interface{}
-	isMultiPart    bool
+	client              *Client
+	URL                 string
+	Method              string
+	QueryParam          url.Values
+	FormData            url.Values
+	Header              http.Header
+	Cookie              []*http.Cookie
+	Body                interface{}
+	PathParams          map[string]string
+	MultipartFormParams map[string]string
+	RawRequest          *protocol.Request
+	Ctx                 context.Context
+	RequestOptions      []config.RequestOption
+	Result              interface{}
+	Error               interface{}
+	isMultiPart         bool
 }
 
 type File struct {

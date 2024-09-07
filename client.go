@@ -21,6 +21,7 @@ import (
 	"github.com/cloudwego/hertz/pkg/app/client"
 	"github.com/cloudwego/hertz/pkg/common/config"
 	"github.com/cloudwego/hertz/pkg/protocol"
+	"github.com/cloudwego/hertz/pkg/protocol/consts"
 	"net/http"
 	"net/url"
 	"strings"
@@ -31,11 +32,9 @@ type Client struct {
 	baseURL string
 	header  http.Header
 
-	beforeRequest       []RequestMiddleware
-	udBeforeRequest     []RequestMiddleware
-	afterResponse       []ResponseMiddleware
-	afterResponseLock   *sync.RWMutex
-	udBeforeRequestLock *sync.RWMutex
+	beforeRequest     []RequestMiddleware
+	afterResponse     []ResponseMiddleware
+	afterResponseLock *sync.RWMutex
 
 	enableDiscovery bool
 
@@ -49,7 +48,7 @@ type (
 )
 
 var (
-	hdrContentTypeKey = http.CanonicalHeaderKey("Content-Type")
+	hdrContentTypeKey = http.CanonicalHeaderKey(consts.HeaderContentType)
 
 	plainTextType       = "text/plain; charset=utf-8"
 	jsonContentType     = "application/json"
@@ -59,8 +58,7 @@ var (
 
 func createClient(cc *client.Client, opts ...config.ClientOption) *Client {
 	c := &Client{
-		udBeforeRequestLock: &sync.RWMutex{},
-		afterResponseLock:   &sync.RWMutex{},
+		afterResponseLock: &sync.RWMutex{},
 
 		client:  cc,
 		options: opts,
@@ -69,10 +67,8 @@ func createClient(cc *client.Client, opts ...config.ClientOption) *Client {
 	c.beforeRequest = []RequestMiddleware{
 		parseRequestURL,
 		parseRequestHeader,
-		parseRequestBody,
+		createHTTPRequest,
 	}
-
-	c.udBeforeRequest = []RequestMiddleware{}
 
 	c.afterResponse = []ResponseMiddleware{}
 
@@ -97,6 +93,17 @@ func (c *Client) EnableServiceDiscovery() *Client {
 	return c
 }
 
+func (c *Client) AddHeader(header, value string) *Client {
+	c.header.Add(header, value)
+	return c
+}
+func (c *Client) AddHeaders(headers map[string]string) *Client {
+	for k, v := range headers {
+		c.AddHeader(k, v)
+	}
+	return c
+}
+
 func (c *Client) GetClient() *client.Client {
 	return c.client
 }
@@ -110,25 +117,14 @@ func (c *Client) NewRequest() *Request {
 	return c.R()
 }
 
+// todo: execute 实现有问题，参考 Hertztool 生成代码重新实现
 func (c *Client) execute(req *Request) (*Response, error) {
-	// Lock the user-defined pre-request hooks.
-	c.udBeforeRequestLock.RLock()
-	defer c.udBeforeRequestLock.RUnlock()
-
 	// Lock the post-request hooks.
 	c.afterResponseLock.RLock()
 	defer c.afterResponseLock.RUnlock()
 
 	// Apply Request middleware
 	var err error
-
-	// user defined on before request methods
-	// to modify the *resty.Request object
-	for _, f := range c.udBeforeRequest {
-		if err = f(c, req); err != nil {
-			return nil, err
-		}
-	}
 
 	for _, f := range c.beforeRequest {
 		if err = f(c, req); err != nil {
