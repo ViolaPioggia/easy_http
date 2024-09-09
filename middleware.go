@@ -36,6 +36,16 @@ var (
 	xmlCheck  = regexp.MustCompile(`(?i:(application|text)/(xml|.*\+xml)(; |$))`)
 )
 
+// parseRequestURL parses and processes the request URL to ensure it is correctly formatted.
+// It includes path and query parameters.
+//
+// For Example:
+//
+//	client := &Client{baseURL: "http://example.com"}
+//	req := &Request{URL: "/api/:id", PathParams: map[string]string{"id": "123"}}
+//	err := parseRequestURL(client, req)
+//
+// Note: This function handles both path and query parameters.
 func parseRequestURL(c *Client, r *Request) error {
 	if len(r.PathParams) > 0 {
 		for p, v := range r.PathParams {
@@ -82,6 +92,16 @@ func parseRequestURL(c *Client, r *Request) error {
 	return nil
 }
 
+// parseRequestHeader merges client and request headers.
+// It handles form data by adding content type header.
+//
+// For Example:
+//
+//	client := &Client{header: http.Header{"Key": {"Value"}}}
+//	req := &Request{Header: http.Header{"AnotherKey": {"AnotherValue"}}, FormData: map[string][]string{}}
+//	err := parseRequestHeader(client, req)
+//
+// Note: Always returns nil error.
 func parseRequestHeader(c *Client, r *Request) error {
 	hdr := make(http.Header)
 	if c.header != nil {
@@ -104,10 +124,24 @@ func parseRequestHeader(c *Client, r *Request) error {
 	return nil
 }
 
+// isPayloadSupported checks if the given HTTP method supports a request body.
+// It returns true if the method is not HEAD, OPTIONS, GET, or DELETE.
+//
+// For Example:
+//
+//	isPayloadSupported("POST") // returns true
+//	isPayloadSupported("GET")  // returns false
 func isPayloadSupported(m string) bool {
 	return !(m == consts.MethodHead || m == consts.MethodOptions || m == consts.MethodGet || m == consts.MethodDelete)
 }
 
+// isStringEmpty checks if a given string is empty.
+// It trims spaces from both ends and checks if the length is zero.
+//
+// For Example:
+//
+//	isStringEmpty("   ") // returns true
+//	isStringEmpty("hello") // returns false
 func isStringEmpty(str string) bool {
 	return len(strings.TrimSpace(str)) == 0
 }
@@ -142,6 +176,15 @@ func detectContentType(body interface{}) string {
 	return contentType
 }
 
+// parseRequestBody parses HTTP request body and returns content type, body reader, and error.
+// It checks if the request method supports payload, determines content type, and serializes body.
+//
+// For Example:
+//
+//	req := &Request{Method: "POST", Body: []byte("example")}
+//	contentType, body, err := parseRequestBody(req)
+//
+// Note: Handles multipart, form data, and detects content type if not specified.
 func parseRequestBody(r *Request) (contentType string, body io.Reader, err error) {
 	if !isPayloadSupported(r.Method) {
 		return
@@ -180,6 +223,16 @@ func parseRequestBody(r *Request) (contentType string, body io.Reader, err error
 	return contentType, strings.NewReader(string(bodyBytes)), nil
 }
 
+// createHTTPRequest creates an HTTP request based on the given client and request.
+// It sets the content type, body, and headers accordingly.
+//
+// For Example:
+//
+//	client := &Client{}
+//	req := &Request{Method: "POST", URL: "https://example.com"}
+//	err := createHTTPRequest(client, req)
+//
+// Note: Handles multipart and form data, sets cookies and options.
 func createHTTPRequest(c *Client, r *Request) (err error) {
 	contentType, body, err := parseRequestBody(r)
 	if err != nil {
@@ -214,6 +267,16 @@ func createHTTPRequest(c *Client, r *Request) (err error) {
 	return nil
 }
 
+// parseResponseBody parses HTTP response body based on content type (JSON/XML).
+// It handles error responses by encoding error info into JSON.
+//
+// For Example:
+//
+//	client := &Client{}
+//	resp := &Response{}
+//	err := parseResponseBody(client, resp)
+//
+// Note: Handles only JSON or XML content types.
 func parseResponseBody(c *Client, resp *Response) (err error) {
 	if resp.StatusCode() == http.StatusNoContent {
 		return

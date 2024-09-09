@@ -22,6 +22,17 @@ import (
 	"github.com/cloudwego/hertz/pkg/network/standard"
 )
 
+// NewClient creates a new client instance supporting HTTPS.
+// It accepts a variadic list of config.ClientOption for configuration.
+//
+// For Example:
+//
+//	client, err := NewClient(config.WithDialer(customDialer))
+//	if err != nil {
+//		log.Fatalf("Failed to create client: %v", err)
+//	}
+//
+// Note: Uses standard library dialer by default for HTTPS support.
 func NewClient(opts ...config.ClientOption) (*Client, error) {
 	// 默认使用标准库以支持 https
 	opts = append(opts, client.WithDialer(standard.NewDialer()))
@@ -29,6 +40,14 @@ func NewClient(opts ...config.ClientOption) (*Client, error) {
 	return createClient(c, opts...), err
 }
 
+// MustNewClient creates a new client instance with given options.
+// It defaults to using the standard library for HTTPS support.
+//
+// For Example:
+//
+//	client := MustNewClient(config.WithTimeout(5 * time.Second))
+//
+// Note: It panics if client creation fails.
 func MustNewClient(opts ...config.ClientOption) *Client {
 	// 默认使用标准库以支持 https
 	opts = append(opts, client.WithDialer(standard.NewDialer()))

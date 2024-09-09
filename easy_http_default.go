@@ -16,6 +16,14 @@
 
 package easy_http
 
+// R creates a new request instance.
+// It uses MustNewClient to create a client and configure middleware.
+//
+// Example:
+//
+//	req := R()
+//
+// Note: MustNewClient may panic if client creation fails.
 func R() *Request {
 	return MustNewClient().NewRequest()
 }
