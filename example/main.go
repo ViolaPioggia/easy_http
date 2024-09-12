@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+
 	"github.com/cloudwego/hertz/pkg/app/client"
 	"github.com/hertz-contrib/easy_http"
 )

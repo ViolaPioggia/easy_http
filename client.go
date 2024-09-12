@@ -18,28 +18,30 @@ package easy_http
 
 import (
 	"context"
-	"github.com/cloudwego/hertz/pkg/app/client"
-	"github.com/cloudwego/hertz/pkg/protocol"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
 	"sync"
+
+	"github.com/cloudwego/hertz/pkg/app/client"
+	"github.com/cloudwego/hertz/pkg/common/config"
+	"github.com/cloudwego/hertz/pkg/protocol"
+	"github.com/cloudwego/hertz/pkg/protocol/consts"
 )
 
 type Client struct {
-	QueryParam url.Values
-	FormData   map[string]string
-	PathParams map[string]string
-	Header     http.Header
-	Cookies    []*http.Cookie
+	baseURL string
+	header  http.Header
 
-	beforeRequest       []RequestMiddleware
-	udBeforeRequest     []RequestMiddleware
-	afterResponse       []ResponseMiddleware
-	afterResponseLock   *sync.RWMutex
-	udBeforeRequestLock *sync.RWMutex
+	beforeRequest     []RequestMiddleware
+	afterResponse     []ResponseMiddleware
+	afterResponseLock *sync.RWMutex
 
-	client *client.Client
+	enableDiscovery bool
+
+	client  *client.Client
+	options []config.ClientOption
 }
 
 type (
@@ -48,180 +50,55 @@ type (
 )
 
 var (
-	hdrContentTypeKey = http.CanonicalHeaderKey("Content-Type")
+	hdrContentTypeKey = http.CanonicalHeaderKey(consts.HeaderContentType)
+	hostHeader        = "Host"
 
-	plainTextType       = "text/plain; charset=utf-8"
-	jsonContentType     = "application/json"
-	formContentType     = "application/x-www-form-urlencoded"
-	formDataContentType = "multipart/form-data"
+	plainTextType       = consts.MIMETextPlainUTF8
+	jsonContentType     = consts.MIMEApplicationJSON
+	formContentType     = consts.MIMEApplicationHTMLForm
+	formDataContentType = consts.MIMEMultipartPOSTForm
 )
 
-func createClient(cc *client.Client) *Client {
+// createClient creates a new client instance with configured request and response middleware.
+// It accepts a client.Client pointer and optional config.ClientOption parameters.
+//
+// For Example:
+//
+//	cc := &client.Client{}
+//	opts := []config.ClientOption{...}
+//	client := createClient(cc, opts...)
+//
+// Note: This function configures middleware for request processing and response parsing.
+func createClient(cc *client.Client, opts ...config.ClientOption) *Client {
 	c := &Client{
-		QueryParam: url.Values{},
-		PathParams: make(map[string]string),
-		Header:     http.Header{},
-		Cookies:    make([]*http.Cookie, 0),
+		afterResponseLock: &sync.RWMutex{},
 
-		udBeforeRequestLock: &sync.RWMutex{},
-		afterResponseLock:   &sync.RWMutex{},
-
-		client: cc,
+		client:  cc,
+		options: opts,
 	}
 
 	c.beforeRequest = []RequestMiddleware{
 		parseRequestURL,
 		parseRequestHeader,
-		parseRequestBody,
+		createHTTPRequest,
 	}
 
-	c.udBeforeRequest = []RequestMiddleware{}
-
-	c.afterResponse = []ResponseMiddleware{}
-
-	return c
-}
-
-func (c *Client) SetQueryParam(param, value string) *Client {
-	c.QueryParam.Set(param, value)
-	return c
-}
-
-func (c *Client) SetQueryParams(params map[string]string) *Client {
-	for k, v := range params {
-		c.QueryParam.Set(k, v)
+	c.afterResponse = []ResponseMiddleware{
+		parseResponseBody,
 	}
+
 	return c
 }
 
-func (c *Client) SetQueryParamsFromValues(params url.Values) *Client {
-	for k, v := range params {
-		for _, v1 := range v {
-			c.QueryParam.Add(k, v1)
-		}
-	}
-	return c
-}
-
-func (c *Client) SetQueryString(query string) *Client {
-	str := strings.Split(query, "&")
-	for _, v := range str {
-		kv := strings.Split(v, "=")
-		if len(kv) == 2 {
-			c.QueryParam.Set(kv[0], kv[1])
-		}
-
-	}
-	return c
-}
-
-func (c *Client) AddQueryParam(param, value string) *Client {
-	c.QueryParam.Add(param, value)
-	return c
-}
-
-func (c *Client) AddQueryParams(params map[string]string) *Client {
-	for k, v := range params {
-		c.QueryParam.Add(k, v)
-	}
-	return c
-}
-
-func (c *Client) SetPathParam(param, value string) *Client {
-	c.PathParams[param] = value
-	return c
-}
-
-func (c *Client) SetPathParams(params map[string]string) *Client {
-	for k, v := range params {
-		c.PathParams[k] = v
-	}
-	return c
-}
-
-func (c *Client) SetHeader(header, value string) *Client {
-	c.Header.Set(header, value)
-	return c
-}
-
-func (c *Client) SetHeaders(headers map[string]string) *Client {
-	for k, v := range headers {
-		c.Header.Set(k, v)
-	}
-	return c
-}
-
-func (c *Client) SetHeaderMultiValues(headers map[string][]string) *Client {
-	for k, header := range headers {
-		for _, v := range header {
-			c.Header.Add(k, v)
-		}
-	}
-	return c
-}
-
-func (c *Client) AddHeader(header, value string) *Client {
-	c.Header.Add(header, value)
-	return c
-}
-
-func (c *Client) AddHeaders(headers map[string]string) *Client {
-	for k, v := range headers {
-		c.Header.Add(k, v)
-	}
-	return c
-}
-
-func (c *Client) AddHeaderMultiValues(headers map[string][]string) *Client {
-	for k, header := range headers {
-		for _, v := range header {
-			c.Header.Add(k, v)
-		}
-	}
-	return c
-}
-
-func (c *Client) SetContentType(contentType string) *Client {
-	c.Header.Set("Content-Type", contentType)
-	return c
-}
-
-func (c *Client) SetJSONContentType() *Client {
-	c.Header.Set("Content-Type", "application/json")
-	return c
-}
-
-func (c *Client) SetXMLContentType() *Client {
-	c.Header.Set("Content-Type", "application/xml")
-	return c
-}
-
-func (c *Client) SetHTMLContentType() *Client {
-	c.Header.Set("Content-Type", "text/html")
-	return c
-}
-
-func (c *Client) SetFormContentType() *Client {
-	c.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	return c
-
-}
-
-func (c *Client) SetFormData() *Client {
-	c.Header.Set("Content-Type", "multipart/form-data")
-	return c
-}
-
-func (c *Client) SetCookie(hc *http.Cookie) *Client {
-	c.Cookies = append(c.Cookies, hc)
-	return c
-}
-
-func (c *Client) SetCookies(hcs []*http.Cookie) *Client {
-	c.Cookies = append(c.Cookies, hcs...)
-	return c
-}
-
+// R initializes and returns a new Request instance.
+// It sets up QueryParam, Header, PathParams, and RawRequest fields.
+//
+// For Example:
+//
+//	client := &Client{}
+//	req := client.R()
+//
+// Note: This method does not take any parameters.
 func (c *Client) R() *Request {
 	r := &Request{
 		QueryParam: url.Values{},
@@ -234,43 +111,138 @@ func (c *Client) R() *Request {
 	return r
 }
 
+// EnableServiceDiscovery enables service discovery for the client.
+// It sets the enableDiscovery field to true and returns the modified client.
+//
+// Example:
+//
+//	client.EnableServiceDiscovery()
+func (c *Client) EnableServiceDiscovery() *Client {
+	c.enableDiscovery = true
+	return c
+}
+
+// UseMiddleware adds one or more middleware to the client's request processing chain.
+// It returns the client instance for chaining.
+//
+// For Example:
+//
+//	client.UseMiddleware(middleware1, middleware2)
+func (c *Client) UseMiddleware(mws ...client.Middleware) *Client {
+	c.client.Use(mws...)
+	return c
+}
+
+// AddHeader method adds a custom HTTP header to the Client instance.
+// It accepts header name and value as parameters.
+//
+// For Example:
+//
+//	client.AddHeader("Authorization", "Bearer token").
+//		AddHeader("Content-Type", "application/json")
+//
+// Returns the updated Client instance for chaining.
+func (c *Client) AddHeader(header, value string) *Client {
+	c.header.Add(header, value)
+	return c
+}
+
+// AddHeaders adds multiple HTTP headers to the client instance.
+// It iterates over the provided map and calls AddHeader for each key-value pair.
+//
+// For Example:
+//
+//	client.AddHeaders(map[string]string{
+//		"Authorization": "Bearer token",
+//		"Content-Type": "application/json",
+//	})
+//
+// Returns the updated client instance.
+func (c *Client) AddHeaders(headers map[string]string) *Client {
+	for k, v := range headers {
+		c.AddHeader(k, v)
+	}
+	return c
+}
+
+// GetClient retrieves the underlying client.Client instance from the Client.
+// It returns a pointer to the client.Client instance.
+//
+// For Example:
+//
+//	client := &Client{client: &client.Client{}}
+//	underlyingClient := client.GetClient()
+func (c *Client) GetClient() *client.Client {
+	return c.client
+}
+
+// SetBaseURL sets the base URL for the client and trims trailing slashes.
+// It returns the updated client instance.
+//
+// For Example:
+//
+//	client.SetBaseURL("https://example.com/")
+//
+// Note: trailing slashes are removed from the URL.
+func (c *Client) SetBaseURL(url string) *Client {
+	c.baseURL = strings.TrimRight(url, "/")
+	return c
+}
+
+// SetServiceName sets the service name and updates the base URL.
+// It formats the name as the base URL and updates the client.
+//
+// For Example:
+//
+//	client.SetServiceName("example.com")
+//
+// Note: This method does not check the validity of the URL.
+func (c *Client) SetServiceName(name string) *Client {
+	c.SetBaseURL(fmt.Sprintf("http://%s", name))
+	return c
+}
+
+// NewRequest creates a new Request instance.
+// It calls the R method of the Client.
+//
+// For Example:
+//
+//	req := client.NewRequest()
+//
+// Note: This method does not take any parameters.
 func (c *Client) NewRequest() *Request {
 	return c.R()
 }
 
+// execute method executes an HTTP request and processes the response.
+// It locks the post-request hooks to prevent concurrency issues.
+//
+//	req := &Request{}
+//	resp, err := client.execute(req)
+//	if err != nil {
+//		log.Fatalf("Request failed: %v", err)
+//	}
+//
+// Note: Handles request and response middleware, and sets Host header.
 func (c *Client) execute(req *Request) (*Response, error) {
-	// Lock the user-defined pre-request hooks.
-	c.udBeforeRequestLock.RLock()
-	defer c.udBeforeRequestLock.RUnlock()
-
 	// Lock the post-request hooks.
 	c.afterResponseLock.RLock()
 	defer c.afterResponseLock.RUnlock()
-
 	// Apply Request middleware
 	var err error
-
-	// user defined on before request methods
-	// to modify the *resty.Request object
-	for _, f := range c.udBeforeRequest {
-		if err = f(c, req); err != nil {
-			return nil, err
-		}
-	}
-
 	for _, f := range c.beforeRequest {
 		if err = f(c, req); err != nil {
 			return nil, err
 		}
 	}
 
-	if hostHeader := req.Header.Get("Host"); hostHeader != "" {
+	if hostHeader := req.Header.Get(hostHeader); hostHeader != "" {
 		req.RawRequest.SetHost(hostHeader)
 	}
+	req.hasCreate = true
 
 	resp := &protocol.Response{}
 	err = c.client.Do(context.Background(), req.RawRequest, resp)
-
 	response := &Response{
 		Request:     req,
 		RawResponse: resp,
