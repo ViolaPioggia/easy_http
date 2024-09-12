@@ -34,7 +34,7 @@ import (
 //
 // Note: Uses standard library dialer by default for HTTPS support.
 func NewClient(opts ...config.ClientOption) (*Client, error) {
-	// 默认使用标准库以支持 https
+	// use standard network library to support https by default
 	opts = append(opts, client.WithDialer(standard.NewDialer()))
 	c, err := client.NewClient(opts...)
 	return createClient(c, opts...), err
@@ -49,7 +49,7 @@ func NewClient(opts ...config.ClientOption) (*Client, error) {
 //
 // Note: It panics if client creation fails.
 func MustNewClient(opts ...config.ClientOption) *Client {
-	// 默认使用标准库以支持 https
+	// use standard network library to support https by default
 	opts = append(opts, client.WithDialer(standard.NewDialer()))
 	c, err := client.NewClient(opts...)
 	if err != nil {

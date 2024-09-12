@@ -51,6 +51,7 @@ type (
 
 var (
 	hdrContentTypeKey = http.CanonicalHeaderKey(consts.HeaderContentType)
+	hostHeader        = "Host"
 
 	plainTextType       = consts.MIMETextPlainUTF8
 	jsonContentType     = consts.MIMEApplicationJSON
@@ -235,7 +236,7 @@ func (c *Client) execute(req *Request) (*Response, error) {
 		}
 	}
 
-	if hostHeader := req.Header.Get("Host"); hostHeader != "" {
+	if hostHeader := req.Header.Get(hostHeader); hostHeader != "" {
 		req.RawRequest.SetHost(hostHeader)
 	}
 	req.hasCreate = true
