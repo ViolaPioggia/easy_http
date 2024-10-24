@@ -75,6 +75,7 @@ func createClient(cc *client.Client, opts ...config.ClientOption) *Client {
 
 		client:  cc,
 		options: opts,
+		header:  http.Header{},
 	}
 
 	c.beforeRequest = []RequestMiddleware{
@@ -101,10 +102,13 @@ func createClient(cc *client.Client, opts ...config.ClientOption) *Client {
 // Note: This method does not take any parameters.
 func (c *Client) R() *Request {
 	r := &Request{
-		QueryParam: url.Values{},
-		Header:     http.Header{},
-		PathParams: map[string]string{},
-		RawRequest: &protocol.Request{},
+		QueryParam:          url.Values{},
+		Header:              http.Header{},
+		FormData:            url.Values{},
+		PathParams:          map[string]string{},
+		MultipartFormParams: map[string]string{},
+		File:                map[string]string{},
+		RawRequest:          &protocol.Request{},
 
 		client: c,
 	}

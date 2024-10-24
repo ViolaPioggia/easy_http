@@ -256,7 +256,12 @@ func (r *Request) SetHeaders(headers map[string]string) *Request {
 //	client.R().
 //		SetHTTPHeader(headers)
 func (r *Request) SetHTTPHeader(header http.Header) *Request {
-	r.Header = header
+	for k, v := range header {
+		for _, pv := range v {
+			// use 'add' to avoid slice case
+			r.Header.Add(k, pv)
+		}
+	}
 	return r
 }
 
@@ -488,7 +493,9 @@ func (r *Request) SetFile(filename, filepath string) *Request {
 // Returns the updated request object.
 func (r *Request) SetFiles(files map[string]string) *Request {
 	r.isMultiPart = true
-	r.File = files
+	for k, v := range files {
+		r.File[k] = v
+	}
 	return r
 }
 
@@ -571,10 +578,16 @@ func (r *Request) WithEnv() *Request {
 //
 // Note: This method modifies the request instance.
 func (r *Request) WithRequestTimeout(t time.Duration) *Request {
-	r.RawRequest.SetOptions(config.WithRequestTimeout(t))
+	r.RequestOptions = append(r.RequestOptions, config.WithRequestTimeout(t))
 	return r
 }
 
+func (r *Request) WithRequestOptions(opts ...config.RequestOption) *Request {
+	r.RequestOptions = append(r.RequestOptions, opts...)
+	return r
+}
+
+// todo: 添加 timeout/redirect 接口
 // Get method executes an HTTP GET request in the given context.
 // It associates the context with the request and then performs the GET request using the specified URL.
 //
